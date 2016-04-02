@@ -12,8 +12,7 @@ public:
 	ByteBuffer(char* data,int offset,int capacity);
 	~ByteBuffer();
 	
-	void put(int n);
-	void putBoolean(bool b);
+	void putBool(bool b);
 	void putByte(byte b);
 	void putShort(short n);
 	void putFloat(float n);
@@ -32,10 +31,8 @@ public:
     
     String getUTF();
     char* getBuffer();
-    char* toByteArray();
-    char get();
     byte getByte();
-    bool getBoolean();
+    bool getBool();
     int getInt();
     float getFloat();
     short getShort();
