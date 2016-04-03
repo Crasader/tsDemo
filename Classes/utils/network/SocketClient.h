@@ -21,7 +21,6 @@ const int	SocketClient_OK = 1;
 const int	SocketClient_DESTROY = 2;
 
 class Message;
-class NewMessage;
 
 using namespace std;
 
@@ -46,11 +45,9 @@ public:
 	
 	//收到服务端消息
 	queue<Message*> m_receivedMessageQueue;
-    queue<NewMessage*> m_receivedNewMessageQueue;
 	
 	//需要发送到服务端的消息
 	queue<Message*> m_sendMessageQueue;
-    queue<NewMessage*> m_sendNewMessageQueue;
 	
 	int m_iState;
 	
@@ -93,16 +90,14 @@ public:
 	bool isWaitConnect();
 	//发送数据
 	void sendMessage_(Message* msg,bool b);
-    void sendMessage_(NewMessage* msg,bool b);
 	
-	NewMessage* popReceivedMessage();
-	NewMessage* pickReceivedMessage();
+	Message* popReceivedMessage();
+	Message* pickReceivedMessage();
 	
-	void pushReceivedMessage(NewMessage* msg);
+	void pushReceivedMessage(Message* msg);
 	
     Message* constructMessage(const char* data,int commandId);
-    NewMessage* constructMessage(Json::Value value, int commandId);
-    NewMessage* constructMessage(std::string);
+
     static int bytesToInt(byte* data);
     static byte* intToByte(int i);
     void swhlie(int commandId);

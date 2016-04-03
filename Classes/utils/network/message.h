@@ -48,15 +48,5 @@ public:
     int datalength();
 };
 
-class NewMessage
-{
-public:
-    void* data;
-    unsigned short length;
-    int datalength();
-//    int length;
-//    Json::Value value;
-};
-
 #endif
 

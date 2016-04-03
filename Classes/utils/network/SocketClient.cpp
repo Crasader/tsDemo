@@ -52,13 +52,6 @@ SocketClient::~SocketClient()
         m_sendMessageQueue.pop();
         SAFE_DELETE_ELEMENT(m);
     }
-    
-    while (!m_sendNewMessageQueue.empty())
-    {
-        NewMessage* m = m_sendNewMessageQueue.front();
-        m_sendNewMessageQueue.pop();
-        SAFE_DELETE_ELEMENT(m);
-    }
 }
 
 void SocketClient::start()
@@ -109,46 +102,6 @@ byte* SocketClient::intToByte(int i)
     abyte0[0] = (byte) ((0xff000000 & i) >> 24);
     
     return abyte0;
-}
-
-NewMessage* SocketClient::constructMessage(std::string value)
-{
-    NewMessage *msg = new NewMessage;
-    
-    const char *pValue = value.c_str();
-    unsigned short valueLength = strlen(pValue);
-    msg->length = valueLength + 2;
-    msg->data = new char(msg->length);
-    
-    void *pLeng = static_cast<void*>(&valueLength);
-    memcpy(msg->data, static_cast<char*>(pLeng) + 1, sizeof(char));
-    memcpy(static_cast<char*>(msg->data) + 1, &valueLength, sizeof(char));
-    
-    memcpy(static_cast<char*>(msg->data) + 2, pValue, valueLength);
-    
-    CCLog("messge %s", pValue);
-    
-    return msg;
-}
-
-NewMessage* SocketClient::constructMessage(Json::Value value, int commandId)
-{
-    NewMessage *msg = new NewMessage;
-    
-    
-    void *pValue = static_cast<void*>(&value);
-    unsigned short valueLength = strlen(static_cast<char*>(pValue));
-    msg->length = valueLength + 2;
-    msg->data = new char(msg->length);
-    
-    void *pLeng = static_cast<void*>(&valueLength);
-    memcpy(msg->data, static_cast<char*>(pLeng) + 1, sizeof(char));
-    
-    memcpy(static_cast<char*>(msg->data) + 1, &valueLength, sizeof(char));
-    
-    memcpy(static_cast<char*>(msg->data) + 2, pValue, valueLength);
-    
-    return msg;
 }
 
 Message* SocketClient::constructMessage(const char* data,int commandId)
@@ -279,26 +232,6 @@ void SocketClient::sendMessage_(Message* msg,bool b)
 	}
 }
 
-void SocketClient::sendMessage_(NewMessage* msg,bool b)
-{
-    if(m_iState == SocketClient_DESTROY)
-    {
-        delete msg;
-        return;
-    }
-    
-    {
-        MyLock lock(&m_sendqueue_mutex);
-        m_sendNewMessageQueue.push(msg);
-    }
-    
-    if( m_iState == SocketClient_OK)
-    {
-        MyLock lock(&m_thread_cond_mutex);
-        pthread_cond_signal(&m_threadCond);
-    }
-}
-
 void* SocketClient::ThreadSendMessage(void *p)
 {
 	SocketClient* This = static_cast<SocketClient*>(p) ;
@@ -362,27 +295,25 @@ void* SocketClient::ThreadSendMessage(void *p)
                 sendBuff.compact();
             }
             
-//            Message* msg = NULL;
-            NewMessage* msg = NULL;
-            while( This->m_iState != SocketClient_DESTROY && This->m_sendNewMessageQueue.size()> 0)
+            Message* msg = NULL;
+
+            while( This->m_iState != SocketClient_DESTROY && This->m_sendMessageQueue.size()> 0)
             {
                 {
                     MyLock lock(&This->m_sendqueue_mutex);
-//                    msg = This->m_sendMessageQueue.front();
-//                    This->m_sendMessageQueue.pop();
-                    msg = This->m_sendNewMessageQueue.front();
-                    This->m_sendNewMessageQueue.pop();
+                    msg = This->m_sendMessageQueue.front();
+                    This->m_sendMessageQueue.pop();
                 }
                 
-//                printf(" sendData length: %d  %ld" ,  msg->datalength(), sizeof(char));
-//                if(msg->datalength() + sendBuff.getPosition() > sendBuff.getLimit())
-//                {
-//                    This->m_iState = SocketClient_DESTROY;
-//                    printf("send buffer is full, send thread stop!");
-//                    MyLock lock(&This->m_sendqueue_mutex);
-//                    This->m_receivedMessageQueue.push(constructErrorMessage(TYPE_SELF_DEINE_MESSAGE_CANNOT_SEND_MESSAGE,0,"发送缓冲器已满，您的网络环境好像出现了问题！"));
-//                    return ((void *)0);
-//                }
+                printf(" sendData length: %d  %ld" ,  msg->datalength(), sizeof(char));
+                if(msg->datalength() + sendBuff.getPosition() > sendBuff.getLimit())
+                {
+                    This->m_iState = SocketClient_DESTROY;
+                    printf("send buffer is full, send thread stop!");
+                    MyLock lock(&This->m_sendqueue_mutex);
+                    This->m_receivedMessageQueue.push(constructErrorMessage(TYPE_SELF_DEINE_MESSAGE_CANNOT_SEND_MESSAGE,0,"发送缓冲器已满，您的网络环境好像出现了问题！"));
+                    return ((void *)0);
+                }
                 sendBuff.put(static_cast<char*>(msg->data), 0, msg->datalength());
                 sendBuff.flip();
                 
@@ -403,8 +334,7 @@ void* SocketClient::ThreadSendMessage(void *p)
             }
 		}
 		
-//		if(This->m_iState != SocketClient_DESTROY && This->m_sendMessageQueue.size() == 0)
-        if(This->m_iState != SocketClient_DESTROY && This->m_sendNewMessageQueue.size() == 0)
+		if(This->m_iState != SocketClient_DESTROY && This->m_sendMessageQueue.size() == 0)
         {
 			//sleep
 			struct timeval tv;
@@ -414,8 +344,7 @@ void* SocketClient::ThreadSendMessage(void *p)
 			ts.tv_nsec = 0;
 			
 			MyLock lock(&(This->m_thread_cond_mutex));
-//			if(This->m_iState != SocketClient_DESTROY && This->m_sendMessageQueue.size() == 0)
-            if(This->m_iState != SocketClient_DESTROY && This->m_sendNewMessageQueue.size() == 0)
+			if(This->m_iState != SocketClient_DESTROY && This->m_sendMessageQueue.size() == 0)
             {
 				pthread_cond_timedwait(&(This->m_threadCond),&(This->m_thread_cond_mutex),&ts);
 			}
@@ -427,7 +356,7 @@ void* SocketClient::ThreadSendMessage(void *p)
 
 bool g_bcheckReceivedMessage = true;
 
-void* SocketClient::ThreadReceiveMessageOld(void *p)
+void* SocketClient::ThreadReceiveMessage(void *p)
 {
 	fd_set fdRead;
 	
@@ -646,281 +575,37 @@ void* SocketClient::ThreadReceiveMessageOld(void *p)
 	return (void*)0;
 }
 
-void* SocketClient::ThreadReceiveMessage(void *p)
-{
-    fd_set fdRead;
-    
-    struct timeval	aTime;
-    aTime.tv_sec = 1;
-    aTime.tv_usec = 0;
-    
-    //最大多少秒，连接上收不到数据就提示用户，重新登录
-    int maxIdleTimeInSeconds = 60*3;
-    
-    //最大多少秒，连接上收不到数据就提示用户，选择重连
-    int hint2TimeInSeconds = 60;
-    
-    //多长时间没有收到任何数据，提示用户
-    int hintTimeInSeconds = 30;
-    
-    struct timeval lastHintUserTime;
-    struct timeval lastReceiveDataTime;
-    struct timeval now;
-    
-    gettimeofday(&lastReceiveDataTime, NULL);
-    lastHintUserTime = lastReceiveDataTime;
-    
-    SocketClient* This = static_cast<SocketClient*>(p) ;
-    
-    ByteBuffer* recvBuff = &This->m_cbRecvBuf;
-    
-    while (This->m_iState != SocketClient_DESTROY)
-    {
-        if(This->m_iState != SocketClient_OK)
-        {
-            usleep(1000);
-            continue;
-        }
-        FD_ZERO(&fdRead);
-        
-        FD_SET(This->m_hSocket,&fdRead);
-        
-        aTime.tv_sec = 1;
-        aTime.tv_usec = 0;
-        
-        int ret = select(This->m_hSocket+1,&fdRead,NULL,NULL,&aTime);
-        if (ret == -1 )
-        {
-            if(errno == EINTR)
-            {
-                printf("======   收到中断信号，什么都不处理＝＝＝＝＝＝＝＝＝");
-            }
-            else
-            {
-                This->m_iState = SocketClient_DESTROY;
-                MyLock lock(&This->m_sendqueue_mutex);
-                return ((void *)0);
-            }
-        }
-        else if(ret==0)
-        {
-            gettimeofday(&now, NULL);
-            if( g_bcheckReceivedMessage )
-            {
-                if(now.tv_sec - lastReceiveDataTime.tv_sec > maxIdleTimeInSeconds && now.tv_sec - lastHintUserTime.tv_sec > hintTimeInSeconds)
-                {
-                    lastHintUserTime = now;
-                    
-                    MyLock lock(&This->m_sendqueue_mutex);
-                    
-                    while( This->m_receivedNewMessageQueue.size()>0)
-                    {
-                        NewMessage* msg = This->m_receivedNewMessageQueue.front();
-                        This->m_receivedNewMessageQueue.pop();
-                        CCLog("删除消息");
-                        delete msg;
-                    }
-                }
-                else if(now.tv_sec - lastReceiveDataTime.tv_sec > hint2TimeInSeconds && now.tv_sec - lastHintUserTime.tv_sec > hintTimeInSeconds)
-                {
-                    lastHintUserTime = now;
-                    MyLock lock(&This->m_sendqueue_mutex);
-                }
-                else if(now.tv_sec - lastReceiveDataTime.tv_sec > hintTimeInSeconds && now.tv_sec - lastHintUserTime.tv_sec > hintTimeInSeconds)
-                {
-                    lastHintUserTime = now;
-                    MyLock lock(&This->m_sendqueue_mutex);
-                }
-            }
-            else
-            {
-                lastHintUserTime = now;
-                lastReceiveDataTime= now;
-            }
-        }
-        else if (ret > 0)
-        {
-            if (FD_ISSET(This->m_hSocket,&fdRead))
-            {
-                int iRetCode = 0;
-                printf(" recv data %d \n", recvBuff->remaining());
-                if(recvBuff->remaining() > 0)
-                {
-                    iRetCode = recv(This->m_hSocket,recvBuff->getBuffer()+recvBuff->getPosition(), recvBuff->remaining(),0);
-                }
-                
-                printf(" recv data later  %d   %d \n", recvBuff->remaining(), iRetCode);
-                if (iRetCode == -1)
-                {
-                    This->m_iState = SocketClient_DESTROY;
-                    MyLock lock(&This->m_sendqueue_mutex);
-                    
-                    while( This->m_receivedNewMessageQueue.size()>0)
-                    {
-                        NewMessage* msg = This->m_receivedNewMessageQueue.front();
-                        This->m_receivedNewMessageQueue.pop();
-                        CCLog("删除消息");
-                        delete msg;
-                    }
-                    
-                    string tmp("网络连接中断！");
-                    return ((void *)0);
-                }
-                else if(iRetCode == 0 && recvBuff->remaining() > 0)
-                {
-                    This->m_iState = SocketClient_DESTROY;
-                    MyLock lock(&This->m_sendqueue_mutex);
-                    while( This->m_receivedNewMessageQueue.size()>0)
-                    {
-                        NewMessage* msg = This->m_receivedNewMessageQueue.front();
-                        This->m_receivedNewMessageQueue.pop();
-                        CCLog("删除消息");
-                        delete msg;
-                    }
-                    
-                    return ((void *)0);
-                }
-                else
-                {
-                    gettimeofday(&lastReceiveDataTime, NULL);
-                    
-                    recvBuff->setPosition(recvBuff->getPosition()+ iRetCode);
-                    recvBuff->flip();
-                    
-                    unsigned short messageLength = 0;
-                    void *pLen = &messageLength;
-                    
-                    byte high = recvBuff->getByte();
-                    memcpy(static_cast<char*>(pLen) + 1, &high, sizeof(char));
-                    
-                    byte low = recvBuff->getByte();
-                    memcpy(pLen, &low, sizeof(char));
-                    
-                    CCLog("receive message %d", messageLength);
-
-                    char *pstrMessage = new char(messageLength);
-                    recvBuff->get(pstrMessage, 0, messageLength);
-                    
-                    CCLog("message--- %s", pstrMessage);
-                    
-                    Json::Reader read;
-                    Json::Value root;
-                    read.parse(pstrMessage, root);
-                    Json::Value data=root["ResRegMsg"];
-                    int ret = data["ResState"].asInt();   //0: 成功  1:server error   2:已注册
-                    CCLog("%d", ret);
-                    
-                    
-                    int tmpOffset = 17;
-                    while(recvBuff->remaining() > tmpOffset)
-                    {
-                        int pos = recvBuff->getPosition();
-                        int length= recvBuff->getLength(9);
-                        
-                        if(recvBuff->remaining()+tmpOffset >= length)
-                        {
-                            NewMessage* message = new NewMessage();
-                            
-                            unsigned short messageLength = 0;
-                            void *pLen = &messageLength;
-                            
-                            byte low = recvBuff->getByte();
-                            memcpy(pLen, &low, sizeof(char));
-                            byte high = recvBuff->getByte();
-                            memcpy(static_cast<char*>(pLen) + 1, &high, sizeof(char));
-
-                            
-                            CCLog("receive message %d", messageLength);
-                            
-                            char* tmp = new char[length-3];
-                            recvBuff->get(tmp,0,length-4);
-                            tmp[length-4] = '\0';
-                            message->data = tmp;
-                            printf("%s",tmp);
-                            MyLock lock(&This->m_sendqueue_mutex);
-                            
-                            This->m_receivedNewMessageQueue.push(message);
-
-//                            CData::getCData()->m_dictionary->setObject(message,bytesToInt(message->commandId));
-                            
-                        }
-                        else if(length>recvBuff->getCapacity())
-                        {
-                            This->m_iState = SocketClient_DESTROY;
-                            
-                            MyLock lock(&This->m_sendqueue_mutex);
-                            
-                            while( This->m_receivedNewMessageQueue.size()>0)
-                            {
-                                NewMessage* msg = This->m_receivedNewMessageQueue.front();
-                                This->m_receivedNewMessageQueue.pop();
-                                CCLog("删除消息");
-                                delete msg;
-                            }
-                            
-                            This->m_receivedMessageQueue.push(constructErrorMessage(TYPE_SELF_DEINE_MESSAGE_CONNECT_TERMINATE,0,"数据包太大，连接中断！"));
-                            return ((void *)0);
-                        }
-                        else
-                        {
-                            recvBuff->setPosition(pos);
-                            break;
-                        }
-                    }
-                    
-                    recvBuff->compact();
-                }
-                
-            }
-        }
-    }
-    
-    return (void*)0;
-}
-
 //获取服务器包
-NewMessage* SocketClient::pickReceivedMessage()
+Message* SocketClient::pickReceivedMessage()
 {
-	NewMessage* msg = NULL;
+	Message* msg = NULL;
 	MyLock lock(&m_sendqueue_mutex);
-//	if( m_receivedMessageQueue.size()>0)
-//    {
-//		msg = m_receivedMessageQueue.front();
-//	}
-    
-    if( m_receivedNewMessageQueue.size()>0)
+	if( m_receivedMessageQueue.size()>0)
     {
-        msg = m_receivedNewMessageQueue.front();
-    }
+		msg = m_receivedMessageQueue.front();
+	}
 
 	
 	return msg;
 }
 
-NewMessage* SocketClient::popReceivedMessage()
+Message* SocketClient::popReceivedMessage()
 {
-	NewMessage* msg = NULL;
+	Message* msg = NULL;
 	MyLock lock(&m_sendqueue_mutex);
-//	if( m_receivedMessageQueue.size()>0)
-//    {
-//		msg = m_receivedMessageQueue.front();
-//		m_receivedMessageQueue.pop();
-//	}
-    
-    if( m_receivedNewMessageQueue.size()>0)
+	if( m_receivedMessageQueue.size()>0)
     {
-        msg = m_receivedNewMessageQueue.front();
-        m_receivedNewMessageQueue.pop();
-    }
+		msg = m_receivedMessageQueue.front();
+		m_receivedMessageQueue.pop();
+	}
 	
 	return msg;
 }
 
-void SocketClient::pushReceivedMessage(NewMessage* msg)
+void SocketClient::pushReceivedMessage(Message* msg)
 {
 	MyLock lock(&m_sendqueue_mutex);
-//	m_receivedMessageQueue.push(msg);
-    m_receivedNewMessageQueue.push(msg);
+	m_receivedMessageQueue.push(msg);
 }
 
 long long SocketClient::getSeq()

@@ -144,28 +144,16 @@ void LayerLogin::menuItemCallbackLogin(CCObject* pSender)
             load=Loading::create();
             addChild(load,9999);
             
-//            Json::Value person;
-//            Json::FastWriter writer;
-//            person["username"]=userName;
-//            person["password"]=password;
-//            std::string strPerson=writer.write(person);
-//            const char *pStr = strPerson.c_str();
-//            CCLog("pwd use %s", pStr);
-//
-//            SocketManager::getInstance()->sendMessage(strPerson.c_str(), 101);
-            
-        
             Json::Value person;
-            person["User"]=userName;
-            person["Passwd"]=password;
-            
-            Json::Value RegisterMsg;
-            RegisterMsg["RegisterMsg"] = person;
-            
             Json::FastWriter writer;
-            std::string strRegisterMsg=writer.write(RegisterMsg);
+            person["username"]=userName;
+            person["password"]=password;
+            std::string strPerson=writer.write(person);
+            const char *pStr = strPerson.c_str();
+            CCLog("pwd use %s", pStr);
+
+            SocketManager::getInstance()->sendMessage(strPerson.c_str(), 101);
             
-            SocketManager::getInstance()->sendMessage(strRegisterMsg);
             this->schedule(schedule_selector(LayerLogin::receiveLoginData), 0.2);
         }
     }

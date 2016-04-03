@@ -32,18 +32,6 @@ void SocketManager::sendMessage(const char* data, int commandId)
     _socket->sendMessage_(msg, false);
 }
 
-void SocketManager::sendMessage(Json::Value value, int commandId)
-{
-    NewMessage *msg=_socket->constructMessage(value, commandId);
-    _socket->sendMessage_(msg, false);
-}
-
-void SocketManager::sendMessage(std::string value)
-{
-    NewMessage *msg=_socket->constructMessage(value);
-    _socket->sendMessage_(msg, false);
-}
-
 
 
 
